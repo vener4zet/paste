@@ -1,7 +1,8 @@
 -- Anti-Aim + ESP для фреймворка Fatality (вкладки: ANTI-AIM, VISUAL, MISC)
--- Anti-Aim: None, Backward (от камеры), At Target (спиной), Spin, Jitter
--- ESP: полный набор (боксы, скелет, чеймсы, трейсеры, здоровье, имена)
--- Кнопка Unload во вкладке MISC полностью удаляет GUI и останавливает все процессы
+-- Anti-Aim: основные режимы (None, Backward, At Target, Spin) + отдельный Jitter
+-- ESP: боксы (Corner/Full), трейсеры, здоровье, имена, расстояние, чеймсы
+-- В MISC: кнопки Infinite Yield, Stretch и Unload (полная выгрузка с улучшенным поиском GUI)
+-- At Target игнорирует вертикальную составляющую
 
 -- Загрузка Fatality
 local Fatality = loadstring(game:HttpGet("https://raw.githubusercontent.com/4lpaca-pin/Fatality/refs/heads/main/src/source.luau"))();
@@ -50,26 +51,14 @@ local Camera = Workspace.CurrentCamera
 
 -- ==================== Anti-Aim часть ====================
 local antiAimEnabled = false
-local currentMode = "none"      -- none, backward, attarget, spin, jitter
+local currentMode = "none"      -- none, backward, attarget, spin
+local jitterEnabled = false     -- отдельный джиттер
 local spinSpeed = 360           -- град/сек
 local jitterRange = 30          -- град
-local backwardDirection = nil
 local antiAimConnection = nil
 
 local function updateAntiAimMode(newMode)
     currentMode = newMode
-    if newMode == "backward" then
-        local camera = Workspace.CurrentCamera
-        if camera then
-            local camLook = camera.CFrame.LookVector
-            local dir = -camLook
-            backwardDirection = Vector3.new(dir.X, 0, dir.Z).Unit
-        else
-            backwardDirection = Vector3.new(0, 0, -1)
-        end
-    else
-        backwardDirection = nil
-    end
 end
 
 local function getClosestPlayer()
@@ -113,11 +102,18 @@ local function antiAimLoop(dt)
 
     local pos = root.Position
     local currentCF = root.CFrame
+    local finalCF = currentCF
 
-    if currentMode == "backward" and backwardDirection then
-        local targetPos = pos + backwardDirection * 10
-        root.CFrame = CFrame.lookAt(pos, targetPos)
-
+    -- Основной режим
+    if currentMode == "backward" then
+        local camera = Workspace.CurrentCamera
+        if camera then
+            local camLook = camera.CFrame.LookVector
+            local dir = -camLook
+            dir = Vector3.new(dir.X, 0, dir.Z).Unit
+            local targetPos = pos + dir * 10
+            finalCF = CFrame.lookAt(pos, targetPos)
+        end
     elseif currentMode == "attarget" then
         local targetPlayer = getClosestPlayer()
         if targetPlayer then
@@ -125,20 +121,25 @@ local function antiAimLoop(dt)
             if targetChar then
                 local targetRoot = targetChar:FindFirstChild("HumanoidRootPart")
                 if targetRoot then
-                    local lookAt = CFrame.lookAt(pos, targetRoot.Position)
-                    root.CFrame = lookAt * CFrame.Angles(0, math.pi, 0)
+                    -- Игнорируем вертикаль: цель на той же высоте, что и игрок
+                    local targetPosFlat = Vector3.new(targetRoot.Position.X, pos.Y, targetRoot.Position.Z)
+                    local lookAt = CFrame.lookAt(pos, targetPosFlat)
+                    finalCF = lookAt * CFrame.Angles(0, math.pi, 0)
                 end
             end
         end
-
     elseif currentMode == "spin" then
         local rotStep = math.rad(spinSpeed * dt)
-        root.CFrame = currentCF * CFrame.Angles(0, rotStep, 0)
-
-    elseif currentMode == "jitter" then
-        local randomYaw = (math.random() * 2 - 1) * math.rad(jitterRange)
-        root.CFrame = currentCF * CFrame.Angles(0, randomYaw, 0)
+        finalCF = currentCF * CFrame.Angles(0, rotStep, 0)
     end
+
+    -- Джиттер (применяется поверх основного режима, если включён)
+    if jitterEnabled then
+        local randomYaw = (math.random() * 2 - 1) * math.rad(jitterRange)
+        finalCF = finalCF * CFrame.Angles(0, randomYaw, 0)
+    end
+
+    root.CFrame = finalCF
 end
 
 local function setAntiAimState(state)
@@ -157,7 +158,7 @@ local ESP = {
     TeamCheck = false,
     ShowTeam = false,
     BoxESP = false,
-    BoxStyle = "Corner", -- Corner, Full, ThreeD
+    BoxStyle = "Corner", -- Corner, Full
     BoxThickness = 1,
     TracerESP = false,
     TracerOrigin = "Bottom", -- Bottom, Top, Mouse, Center
@@ -168,7 +169,7 @@ local ESP = {
     NameMode = "DisplayName",
     ShowDistance = true,
     DistanceUnit = "studs",
-    TextSize = 14,
+    TextSize = 14, -- фиксированный
     MaxDistance = 1000,
     RainbowEnabled = false,
     RainbowSpeed = 1,
@@ -182,10 +183,6 @@ local ESP = {
     ChamsTransparency = 0.5,
     ChamsOutlineTransparency = 0,
     ChamsOutlineThickness = 0.1,
-    SkeletonESP = false,
-    SkeletonColor = Color3.fromRGB(255, 255, 255),
-    SkeletonThickness = 1.5,
-    SkeletonTransparency = 1,
     EnemyColor = Color3.fromRGB(255, 25, 25),
     AllyColor = Color3.fromRGB(25, 255, 25),
     HealthColor = Color3.fromRGB(0, 255, 0)
@@ -193,9 +190,9 @@ local ESP = {
 
 local Drawings = {
     ESP = {},
-    Skeleton = {}
 }
 local Highlights = {}
+local Colors = {Rainbow = Color3.new(1,0,0)} -- для радуги
 
 local function createESP(player)
     if player == LocalPlayer then return end
@@ -265,24 +262,6 @@ local function createESP(player)
     highlight.Enabled = false
     Highlights[player] = highlight
     
-    local skeleton = {}
-    local boneNames = {
-        "Head", "UpperTorso", "LowerTorso", "HumanoidRootPart",
-        "LeftUpperArm", "LeftLowerArm", "LeftHand",
-        "RightUpperArm", "RightLowerArm", "RightHand",
-        "LeftUpperLeg", "LeftLowerLeg", "LeftFoot",
-        "RightUpperLeg", "RightLowerLeg", "RightFoot"
-    }
-    for _, name in ipairs(boneNames) do
-        skeleton[name] = Drawing.new("Line")
-        skeleton[name].Visible = false
-        skeleton[name].Color = ESP.SkeletonColor
-        skeleton[name].Thickness = ESP.SkeletonThickness
-        skeleton[name].Transparency = ESP.SkeletonTransparency
-    end
-    
-    Drawings.Skeleton[player] = skeleton
-    
     Drawings.ESP[player] = {
         Box = box,
         Tracer = tracer,
@@ -301,11 +280,6 @@ local function removeESP(player)
         for _, obj in pairs(esp.Info) do obj:Remove() end
         esp.Snapline:Remove()
         Drawings.ESP[player] = nil
-    end
-    local skeleton = Drawings.Skeleton[player]
-    if skeleton then
-        for _, line in pairs(skeleton) do line:Remove() end
-        Drawings.Skeleton[player] = nil
     end
     local highlight = Highlights[player]
     if highlight then
@@ -349,8 +323,6 @@ local function updateESP(player)
         for _, obj in pairs(esp.HealthBar) do obj.Visible = false end
         for _, obj in pairs(esp.Info) do obj.Visible = false end
         esp.Snapline.Visible = false
-        local skeleton = Drawings.Skeleton[player]
-        if skeleton then for _, line in pairs(skeleton) do line.Visible = false end end
         return
     end
     
@@ -361,8 +333,6 @@ local function updateESP(player)
         for _, obj in pairs(esp.HealthBar) do obj.Visible = false end
         for _, obj in pairs(esp.Info) do obj.Visible = false end
         esp.Snapline.Visible = false
-        local skeleton = Drawings.Skeleton[player]
-        if skeleton then for _, line in pairs(skeleton) do line.Visible = false end end
         return
     end
     
@@ -374,8 +344,6 @@ local function updateESP(player)
         for _, obj in pairs(esp.HealthBar) do obj.Visible = false end
         for _, obj in pairs(esp.Info) do obj.Visible = false end
         esp.Snapline.Visible = false
-        local skeleton = Drawings.Skeleton[player]
-        if skeleton then for _, line in pairs(skeleton) do line.Visible = false end end
         return
     end
     
@@ -385,8 +353,6 @@ local function updateESP(player)
         for _, obj in pairs(esp.HealthBar) do obj.Visible = false end
         for _, obj in pairs(esp.Info) do obj.Visible = false end
         esp.Snapline.Visible = false
-        local skeleton = Drawings.Skeleton[player]
-        if skeleton then for _, line in pairs(skeleton) do line.Visible = false end end
         return
     end
     
@@ -397,8 +363,6 @@ local function updateESP(player)
         for _, obj in pairs(esp.HealthBar) do obj.Visible = false end
         for _, obj in pairs(esp.Info) do obj.Visible = false end
         esp.Snapline.Visible = false
-        local skeleton = Drawings.Skeleton[player]
-        if skeleton then for _, line in pairs(skeleton) do line.Visible = false end end
         return
     end
     
@@ -468,8 +432,6 @@ local function updateESP(player)
             esp.Box.Bottom.From = boxPos + Vector2.new(0, boxSize.Y)
             esp.Box.Bottom.To = boxPos + Vector2.new(boxSize.X, boxSize.Y)
             esp.Box.Bottom.Visible = true
-        elseif ESP.BoxStyle == "ThreeD" then
-            -- упрощённо для краткости (можно добавить полноценный 3D)
         end
         
         for _, obj in pairs(esp.Box) do
@@ -535,17 +497,6 @@ local function updateESP(player)
         esp.Info.Distance.Visible = false
     end
     
-    -- Скелет
-    if ESP.SkeletonESP then
-        local skeleton = Drawings.Skeleton[player]
-        if skeleton then
-            -- Очистить видимость
-            for _, line in pairs(skeleton) do line.Visible = false end
-            -- Здесь можно добавить отрисовку скелета, но для краткости пропущено
-            -- В реальном коде нужно реализовать соединение костей
-        end
-    end
-    
     -- Chams
     local highlight = Highlights[player]
     if highlight then
@@ -564,7 +515,6 @@ end
 
 local function espLoop()
     if not ESP.Enabled then
-        -- Скрыть всё
         for _, player in ipairs(Players:GetPlayers()) do
             local esp = Drawings.ESP[player]
             if esp then
@@ -573,10 +523,6 @@ local function espLoop()
                 for _, obj in pairs(esp.HealthBar) do obj.Visible = false end
                 for _, obj in pairs(esp.Info) do obj.Visible = false end
                 esp.Snapline.Visible = false
-            end
-            local skeleton = Drawings.Skeleton[player]
-            if skeleton then
-                for _, line in pairs(skeleton) do line.Visible = false end
             end
         end
         return
@@ -608,16 +554,15 @@ local aaSection = AntiAimTab:AddSection({
 })
 
 aaSection:AddDropdown({
-    Name = "Mode",
-    Values = {"None", "Backward", "At Target", "Spin", "Jitter"},
+    Name = "Main Mode",
+    Values = {"None", "Backward", "At Target", "Spin"},
     Default = "None",
     Callback = function(value)
         local modeMap = {
             ["None"] = "none",
             ["Backward"] = "backward",
             ["At Target"] = "attarget",
-            ["Spin"] = "spin",
-            ["Jitter"] = "jitter"
+            ["Spin"] = "spin"
         }
         local newMode = modeMap[value] or "none"
         updateAntiAimMode(newMode)
@@ -633,12 +578,24 @@ aaSection:AddSlider({
     Name = "Spin Speed (deg/s)",
     Default = 360,
     Min = 10,
-    Max = 720,
+    Max = 2000,
     Type = "deg/s",
     Callback = function(val) spinSpeed = val end
 })
 
-aaSection:AddSlider({
+-- Отдельная секция для Jitter
+local jitterSection = AntiAimTab:AddSection({
+    Name = "JITTER",
+    Position = 'left'
+})
+
+jitterSection:AddToggle({
+    Name = "Enable Jitter",
+    Default = false,
+    Callback = function(val) jitterEnabled = val end
+})
+
+jitterSection:AddSlider({
     Name = "Jitter Range (deg)",
     Default = 30,
     Min = 1,
@@ -684,7 +641,7 @@ boxSection:AddToggle({
 
 boxSection:AddDropdown({
     Name = "Box Style",
-    Values = {"Corner", "Full", "ThreeD"},
+    Values = {"Corner", "Full"},
     Default = "Corner",
     Callback = function(val) ESP.BoxStyle = val end
 })
@@ -759,14 +716,6 @@ nameSection:AddToggle({
 })
 
 nameSection:AddSlider({
-    Name = "Text Size",
-    Default = 14,
-    Min = 8,
-    Max = 24,
-    Callback = function(val) ESP.TextSize = val end
-})
-
-nameSection:AddSlider({
     Name = "Max Distance",
     Default = 1000,
     Min = 100,
@@ -819,31 +768,6 @@ chamsSection:AddSlider({
     Max = 1,
     Rounding = 2,
     Callback = function(val) ESP.ChamsOutlineTransparency = val end
-})
-
-local skeletonSection = VisualTab:AddSection({
-    Name = "SKELETON",
-    Position = 'left'
-})
-
-skeletonSection:AddToggle({
-    Name = "Skeleton ESP",
-    Default = false,
-    Callback = function(val) ESP.SkeletonESP = val end
-})
-
-skeletonSection:AddColorPicker({
-    Name = "Skeleton Color",
-    Default = ESP.SkeletonColor,
-    Callback = function(val) ESP.SkeletonColor = val end
-})
-
-skeletonSection:AddSlider({
-    Name = "Line Thickness",
-    Default = 1.5,
-    Min = 1,
-    Max = 3,
-    Callback = function(val) ESP.SkeletonThickness = val end
 })
 
 local colorSection = VisualTab:AddSection({
@@ -913,78 +837,181 @@ rainbowSection:AddDropdown({
     end
 })
 
--- ==================== Выгрузка (Unload) ====================
-local function unloadAll()
-    -- Останавливаем Anti-Aim
-    setAntiAimState(false)
-    if antiAimConnection then
-        antiAimConnection:Disconnect()
-        antiAimConnection = nil
+-- ==================== Кнопки в MISC (левая колонка) ====================
+local miscSectionLeft = Misc:AddSection({
+    Name = "UTILITIES",
+    Position = 'left'
+})
+
+miscSectionLeft:AddButton({
+    Name = "Load Infinite Yield",
+    Description = "Загрузить админ-скрипт Infinite Yield",
+    Callback = function()
+        loadstring(game:HttpGet('https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source'))()
     end
-    
-    -- Останавливаем ESP
-    if espConnection then
-        espConnection:Disconnect()
-        espConnection = nil
+})
+
+miscSectionLeft:AddButton({
+    Name = "Stretch",
+    Description = "Активировать эффект растяжения (Resolution)",
+    Callback = function()
+        getgenv().Resolution = {
+            [".gg/scripters"] = 0.65
+        }
+        local Camera = workspace.CurrentCamera
+        if getgenv().gg_scripters == nil then
+            game:GetService("RunService").RenderStepped:Connect(
+                function()
+                    Camera.CFrame = Camera.CFrame * CFrame.new(0, 0, 0, 1, 0, 0, 0, getgenv().Resolution[".gg/scripters"], 0, 0, 0, 1)
+                end
+            )
+        end
+        getgenv().gg_scripters = "Aori0001"
     end
-    
-    -- Удаляем все Drawing объекты
-    for _, player in ipairs(Players:GetPlayers()) do
-        removeESP(player)
-    end
-    
-    -- Удаляем все Highlight
-    for _, highlight in pairs(Highlights) do
-        pcall(function() highlight:Destroy() end)
-    end
-    Highlights = {}
-    
-    -- Уничтожаем GUI Fatality (все ScreenGui с именем FATALITY или содержащие нашу кнопку)
-    local containers = {CoreGui, LocalPlayer:FindFirstChildOfClass("PlayerGui")}
-    for _, container in ipairs(containers) do
-        if container then
-            for _, gui in ipairs(container:GetChildren()) do
-                if gui:IsA("ScreenGui") then
-                    if string.lower(gui.Name):find("fatality") then
-                        pcall(function() gui:Destroy() end)
-                    else
-                        -- Ищем нашу кнопку
-                        local found = false
-                        local function search(inst)
-                            if inst:IsA("TextButton") and inst.Text == "Unload Entire Script" then
-                                found = true
-                                return true
-                            end
-                            for _, child in ipairs(inst:GetChildren()) do
-                                if search(child) then return true end
+})
+
+-- ==================== Кнопка Unload (правая колонка) с улучшенным поиском GUI ====================
+local miscSectionRight = Misc:AddSection({
+    Name = "UNLOAD",
+    Position = 'right'
+})
+
+miscSectionRight:AddButton({
+    Name = "Unload Script",
+    Description = "Полностью выгрузить скрипт и закрыть UI",
+    Callback = function()
+        -- 1. Останавливаем Anti-Aim
+        setAntiAimState(false)
+        if antiAimConnection then
+            antiAimConnection:Disconnect()
+            antiAimConnection = nil
+        end
+
+        -- 2. Останавливаем ESP
+        if espConnection then
+            espConnection:Disconnect()
+            espConnection = nil
+        end
+
+        -- 3. Удаляем все Drawing объекты ESP
+        for _, player in ipairs(Players:GetPlayers()) do
+            local esp = Drawings.ESP[player]
+            if esp then
+                for _, obj in pairs(esp.Box) do pcall(function() obj:Remove() end) end
+                pcall(function() esp.Tracer:Remove() end)
+                for _, obj in pairs(esp.HealthBar) do pcall(function() obj:Remove() end) end
+                for _, obj in pairs(esp.Info) do pcall(function() obj:Remove() end) end
+                pcall(function() esp.Snapline:Remove() end)
+            end
+        end
+        Drawings.ESP = {}
+
+        -- 4. Удаляем Highlight
+        for _, highlight in pairs(Highlights) do
+            pcall(function() highlight:Destroy() end)
+        end
+        Highlights = {}
+
+        -- 5. Улучшенный поиск и уничтожение GUI Fatality
+        print("=== Поиск GUI Fatality для выгрузки ===")
+        local containers = {CoreGui, LocalPlayer:FindFirstChildOfClass("PlayerGui")}
+        local destroyed = false
+
+        -- Функция для поиска по заголовку "FATALITY"
+        local function findGuiByTitle()
+            for _, container in ipairs(containers) do
+                if container then
+                    -- Ищем все TextLabel с текстом "FATALITY" (название окна)
+                    local function search(inst)
+                        if inst:IsA("TextLabel") and inst.Text == "FATALITY" then
+                            -- Нашли заголовок, поднимаемся до ScreenGui
+                            local gui = inst:FindFirstAncestorOfClass("ScreenGui")
+                            if gui then
+                                return gui
                             end
                         end
-                        if search(gui) then
-                            pcall(function() gui:Destroy() end)
+                        for _, child in ipairs(inst:GetChildren()) do
+                            local res = search(child)
+                            if res then return res end
+                        end
+                    end
+                    local gui = search(container)
+                    if gui then
+                        return gui
+                    end
+                end
+            end
+            return nil
+        end
+
+        -- Сначала пробуем найти по нашей кнопке "Unload Script(Double Click)"
+        local function findGuiByButton()
+            for _, container in ipairs(containers) do
+                if container then
+                    local function search(inst)
+                        if inst:IsA("TextButton") and inst.Text == "Unload Script" then
+                            local gui = inst:FindFirstAncestorOfClass("ScreenGui")
+                            if gui then
+                                return gui
+                            end
+                        end
+                        for _, child in ipairs(inst:GetChildren()) do
+                            local res = search(child)
+                            if res then return res end
+                        end
+                    end
+                    local gui = search(container)
+                    if gui then
+                        return gui
+                    end
+                end
+            end
+            return nil
+        end
+
+        local targetGui = findGuiByButton() or findGuiByTitle()
+
+        if targetGui then
+            print("Найден GUI:", targetGui:GetFullName())
+            pcall(function() targetGui:Destroy() end)
+            destroyed = true
+            print("GUI уничтожен.")
+        else
+            print("Не удалось найти GUI по кнопке или заголовку. Вывожу список всех ScreenGui:")
+            for _, container in ipairs(containers) do
+                if container then
+                    print("Контейнер:", container:GetFullName())
+                    for _, gui in ipairs(container:GetChildren()) do
+                        if gui:IsA("ScreenGui") then
+                            print("  GUI:", gui.Name)
+                            -- Ищем текстовые кнопки
+                            local function listButtons(inst, indent)
+                                indent = indent or "    "
+                                for _, child in ipairs(inst:GetChildren()) do
+                                    if child:IsA("TextButton") then
+                                        print(indent .. "Кнопка:", child.Text)
+                                    end
+                                    listButtons(child, indent .. "  ")
+                                end
+                            end
+                            listButtons(gui)
                         end
                     end
                 end
             end
+            print("Вы можете вручную уничтожить GUI, используя имя из списка, например:")
+            print("game:GetService('CoreGui'):FindFirstChild('ИМЯ_GUI'):Destroy()")
         end
+
+        -- 6. Очищаем переменные
+        Window = nil
+        Fatality = nil
+        AntiAimTab = nil
+        VisualTab = nil
+        Misc = nil
+
+        print("Fatality: скрипт полностью выгружен.")
     end
-    
-    -- Очищаем переменные
-    Drawings = nil
-    ESP = nil
-    Window = nil
-    Fatality = nil
-    
-    print("Fatality: скрипт полностью выгружен.")
-end
-
-local miscSection = Misc:AddSection({
-    Name = "GENERAL",
-    Position = 'left'
-})
-
-miscSection:AddButton({
-    Name = "Unload Entire Script",
-    Callback = unloadAll
 })
 
 -- ==================== Инициализация ====================
