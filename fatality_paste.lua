@@ -877,7 +877,7 @@ local miscSectionRight = Misc:AddSection({
 })
 
 miscSectionRight:AddButton({
-    Name = "Unload Script",
+    Name = "Unload(Double Click)",
     Description = "Полностью выгрузить скрипт и закрыть UI",
     Callback = function()
         -- 1. Останавливаем Anti-Aim
