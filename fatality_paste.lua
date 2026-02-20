@@ -870,14 +870,14 @@ miscSectionLeft:AddButton({
     end
 })
 
--- ==================== Кнопка Unload (правая колонка) с улучшенным поиском GUI ====================
-local miscSectionRight = Misc:AddSection({
+-- ==================== Кнопка Unload с точным уничтожением через Fatality.Windows ====================
+local miscSection = Misc:AddSection({
     Name = "UNLOAD",
     Position = 'right'
 })
 
-miscSectionRight:AddButton({
-    Name = "Unload(Double Click)",
+miscSection:AddButton({
+    Name = "Unload Script",
     Description = "Полностью выгрузить скрипт и закрыть UI",
     Callback = function()
         -- 1. Останавливаем Anti-Aim
@@ -912,95 +912,30 @@ miscSectionRight:AddButton({
         end
         Highlights = {}
 
-        -- 5. Улучшенный поиск и уничтожение GUI Fatality
-        print("=== Поиск GUI Fatality для выгрузки ===")
-        local containers = {CoreGui, LocalPlayer:FindFirstChildOfClass("PlayerGui")}
+        -- 5. Уничтожаем GUI через глобальную таблицу Fatality.Windows
+        print("=== Уничтожение GUI Fatality через Fatality.Windows ===")
         local destroyed = false
-
-        -- Функция для поиска по заголовку "FATALITY"
-        local function findGuiByTitle()
-            for _, container in ipairs(containers) do
-                if container then
-                    -- Ищем все TextLabel с текстом "FATALITY" (название окна)
-                    local function search(inst)
-                        if inst:IsA("TextLabel") and inst.Text == "FATALITY" then
-                            -- Нашли заголовок, поднимаемся до ScreenGui
-                            local gui = inst:FindFirstAncestorOfClass("ScreenGui")
-                            if gui then
-                                return gui
-                            end
-                        end
-                        for _, child in ipairs(inst:GetChildren()) do
-                            local res = search(child)
-                            if res then return res end
-                        end
-                    end
-                    local gui = search(container)
-                    if gui then
-                        return gui
-                    end
-                end
+        -- Копируем список, так как будем изменять оригинал
+        local windows = {}
+        for _, w in ipairs(Fatality.Windows) do
+            table.insert(windows, w)
+        end
+        for _, gui in ipairs(windows) do
+            -- Проверяем, что GUI ещё существует и является ScreenGui
+            if gui and gui:IsA("ScreenGui") and gui.Parent then
+                -- Дополнительно можно проверить, содержит ли он нашу кнопку, чтобы не удалить чужое окно Fatality
+                -- Но обычно Fatality.Windows хранит все окна, созданные через этот экземпляр фреймворка.
+                -- Мы можем просто удалить все, так как других окон в текущем контексте не должно быть.
+                pcall(function() gui:Destroy() end)
+                destroyed = true
+                print("Уничтожен GUI:", gui:GetFullName())
             end
-            return nil
         end
 
-        -- Сначала пробуем найти по нашей кнопке "Unload Script(Double Click)"
-        local function findGuiByButton()
-            for _, container in ipairs(containers) do
-                if container then
-                    local function search(inst)
-                        if inst:IsA("TextButton") and inst.Text == "Unload Script" then
-                            local gui = inst:FindFirstAncestorOfClass("ScreenGui")
-                            if gui then
-                                return gui
-                            end
-                        end
-                        for _, child in ipairs(inst:GetChildren()) do
-                            local res = search(child)
-                            if res then return res end
-                        end
-                    end
-                    local gui = search(container)
-                    if gui then
-                        return gui
-                    end
-                end
-            end
-            return nil
-        end
-
-        local targetGui = findGuiByButton() or findGuiByTitle()
-
-        if targetGui then
-            print("Найден GUI:", targetGui:GetFullName())
-            pcall(function() targetGui:Destroy() end)
-            destroyed = true
-            print("GUI уничтожен.")
+        if destroyed then
+            print("GUI успешно уничтожен.")
         else
-            print("Не удалось найти GUI по кнопке или заголовку. Вывожу список всех ScreenGui:")
-            for _, container in ipairs(containers) do
-                if container then
-                    print("Контейнер:", container:GetFullName())
-                    for _, gui in ipairs(container:GetChildren()) do
-                        if gui:IsA("ScreenGui") then
-                            print("  GUI:", gui.Name)
-                            -- Ищем текстовые кнопки
-                            local function listButtons(inst, indent)
-                                indent = indent or "    "
-                                for _, child in ipairs(inst:GetChildren()) do
-                                    if child:IsA("TextButton") then
-                                        print(indent .. "Кнопка:", child.Text)
-                                    end
-                                    listButtons(child, indent .. "  ")
-                                end
-                            end
-                            listButtons(gui)
-                        end
-                    end
-                end
-            end
-            print("Вы можете вручную уничтожить GUI, используя имя из списка, например:")
-            print("game:GetService('CoreGui'):FindFirstChild('ИМЯ_GUI'):Destroy()")
+            print("Не удалось найти GUI в Fatality.Windows.")
         end
 
         -- 6. Очищаем переменные
@@ -1009,6 +944,7 @@ miscSectionRight:AddButton({
         AntiAimTab = nil
         VisualTab = nil
         Misc = nil
+        LuaTab = nil
 
         print("Fatality: скрипт полностью выгружен.")
     end
