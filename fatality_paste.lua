@@ -479,13 +479,18 @@ local function updateESP(player)
     end
     
     if ESP.TeamCheck and player.Team == LocalPlayer.Team and not ESP.ShowTeam then
-        for _, obj in pairs(esp.Box) do obj.Visible = false end
-        esp.Tracer.Visible = false
-        for _, obj in pairs(esp.HealthBar) do obj.Visible = false end
-        for _, obj in pairs(esp.Info) do obj.Visible = false end
-        esp.Snapline.Visible = false
-        return
+    for _, obj in pairs(esp.Box) do obj.Visible = false end
+    esp.Tracer.Visible = false
+    for _, obj in pairs(esp.HealthBar) do obj.Visible = false end
+    for _, obj in pairs(esp.Info) do obj.Visible = false end
+    esp.Snapline.Visible = false
+    -- Отключаем Highlight для этого игрока
+    local highlight = Highlights[player]
+    if highlight then
+        highlight.Enabled = false
     end
+    return
+end
     
     local humanoid = character:FindFirstChildOfClass("Humanoid")
     if not humanoid or humanoid.Health <= 0 then
@@ -928,12 +933,6 @@ espSection:AddToggle({
     Name = "Team Check",
     Default = false,
     Callback = function(val) ESP.TeamCheck = val end
-})
-
-espSection:AddToggle({
-    Name = "Show Team",
-    Default = false,
-    Callback = function(val) ESP.ShowTeam = val end
 })
 
 local boxSection = VisualTab:AddSection({
