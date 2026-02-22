@@ -850,14 +850,6 @@ tracerSection:AddDropdown({
     Callback = function(val) ESP.TracerOrigin = val end
 })
 
-tracerSection:AddSlider({
-    Name = "Tracer Thickness",
-    Default = 1,
-    Min = 1,
-    Max = 3,
-    Callback = function(val) ESP.TracerThickness = val end
-})
-
 local healthSection = VisualTab:AddSection({
     Name = "HEALTH",
     Position = 'center'
@@ -963,12 +955,6 @@ colorSection:AddColorPicker({
     Name = "Ally Color",
     Default = ESP.AllyColor,
     Callback = function(val) ESP.AllyColor = val end
-})
-
-colorSection:AddColorPicker({
-    Name = "Health Color",
-    Default = ESP.HealthColor,
-    Callback = function(val) ESP.HealthColor = val end
 })
 
 local rainbowSection = VisualTab:AddSection({
