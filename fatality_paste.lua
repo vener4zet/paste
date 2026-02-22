@@ -522,8 +522,10 @@ local function updateESP(player)
     end
 end
 
+-- ==================== Исправленный espLoop с отключением Highlights ====================
 local function espLoop()
     if not ESP.Enabled then
+        -- Скрываем все Drawing объекты
         for _, player in ipairs(Players:GetPlayers()) do
             local esp = Drawings.ESP[player]
             if esp then
@@ -532,6 +534,12 @@ local function espLoop()
                 for _, obj in pairs(esp.HealthBar) do obj.Visible = false end
                 for _, obj in pairs(esp.Info) do obj.Visible = false end
                 esp.Snapline.Visible = false
+            end
+        end
+        -- Отключаем все Chams (Highlights)
+        for _, highlight in pairs(Highlights) do
+            if highlight then
+                highlight.Enabled = false
             end
         end
         return
