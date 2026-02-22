@@ -192,7 +192,7 @@ local ESP = {
     ChamsTransparency = 0.5,
     ChamsOutlineTransparency = 0,
     ChamsOutlineThickness = 0.1,
-    EnemyColor = Color3.fromRGB(255, 25, 25),
+    EnemyColor = Color3.fromRGB(255, 255, 255),
     AllyColor = Color3.fromRGB(25, 255, 25),
     HealthColor = Color3.fromRGB(0, 255, 0)
 }
@@ -956,7 +956,7 @@ local colorSection = VisualTab:AddSection({
 
 colorSection:AddColorPicker({
     Name = "Enemy Color",
-    Default = ESP.EnemyColor,
+    Default = Color3.fromRGB(255, 255, 255),
     Callback = function(val) ESP.EnemyColor = val end
 })
 
