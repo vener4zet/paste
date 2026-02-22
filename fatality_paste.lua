@@ -23,7 +23,7 @@ Notification:Notify({
 
 local Window = Fatality.new({
     Name = "FATALITY",
-    Expire = "never",
+    Expire = "1488 days",
 });
 
 -- Создаём вкладки
@@ -174,9 +174,9 @@ local ESP = {
     TracerThickness = 1,
     HealthESP = false,
     HealthStyle = "Bar", -- Bar, Text, Both
-    NameESP = false,
+    NameESP = true,
     NameMode = "DisplayName",
-    ShowDistance = true,
+    ShowDistance = false,
     DistanceUnit = "studs",
     TextSize = 14, -- фиксированный
     MaxDistance = 1000,
@@ -883,13 +883,13 @@ local nameSection = VisualTab:AddSection({
 
 nameSection:AddToggle({
     Name = "Name ESP",
-    Default = false,
+    Default = true,
     Callback = function(val) ESP.NameESP = val end
 })
 
 nameSection:AddToggle({
     Name = "Show Distance",
-    Default = true,
+    Default = false,
     Callback = function(val) ESP.ShowDistance = val end
 })
 
@@ -929,23 +929,24 @@ chamsSection:AddColorPicker({
     Default = ESP.ChamsOccludedColor,
     Callback = function(val) ESP.ChamsOccludedColor = val end
 })
-
 chamsSection:AddSlider({
     Name = "Fill Transparency",
-    Default = 0.5,
+    Default = 5,
     Min = 0,
-    Max = 1,
-    Rounding = 2,
-    Callback = function(val) ESP.ChamsTransparency = val end
+    Max = 10,
+    Rounding = 0,
+    Type = "",
+    Callback = function(val) ESP.ChamsTransparency = val / 10 end
 })
 
 chamsSection:AddSlider({
     Name = "Outline Transparency",
-    Default = 0,
+    Default = 5,
     Min = 0,
-    Max = 1,
-    Rounding = 2,
-    Callback = function(val) ESP.ChamsOutlineTransparency = val end
+    Max = 10,
+    Rounding = 0,
+    Type = "",      
+    Callback = function(val) ESP.ChamsOutlineTransparency = val / 10 end
 })
 
 local colorSection = VisualTab:AddSection({
