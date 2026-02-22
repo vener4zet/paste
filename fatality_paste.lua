@@ -66,8 +66,9 @@ local Camera = Workspace.CurrentCamera
 local aimLockEnabled = false
 local aimTargetPlayer = nil
 local aimPart = "Head"
-local aimKeybind = Enum.KeyCode.Q
+local aimKeybind = Enum.KeyCode.Q  -- значение по умолчанию
 local aimConnection = nil
+local inputConnection = nil
 
 local function findNearestPlayerByPart(mousePosition)
     local nearestPlayer = nil
@@ -99,18 +100,18 @@ end
 local function lockMouseToPlayer(player)
     aimTargetPlayer = player
     UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
-    print("Locked to:", player.Name)  -- отладка
+    print("Locked to:", player.Name)
 end
 
 local function unlockMouse()
     aimTargetPlayer = nil
     UserInputService.MouseBehavior = Enum.MouseBehavior.Default
-    print("Unlocked")  -- отладка
+    print("Unlocked")
 end
 
-UserInputService.InputBegan:Connect(function(input, gameProcessed)
+-- Обработка нажатия клавиши
+inputConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
     if gameProcessed then return end
-    print("Key pressed:", input.KeyCode, "aimLockEnabled=", aimLockEnabled, "aimKeybind=", aimKeybind.Name)
     if input.KeyCode == aimKeybind and aimLockEnabled then
         if not aimTargetPlayer then
             local mouse = LocalPlayer:GetMouse()
@@ -148,6 +149,7 @@ end
 
 aimConnection = RunService.RenderStepped:Connect(aimLoop)
 
+-- UI для AIM
 local aimSection = AimTab:AddSection({
     Name = "AIM LOCK",
     Position = 'left'
@@ -169,14 +171,14 @@ aimSection:AddDropdown({
     Callback = function(val) aimPart = val end
 })
 
-local alphabetKeys = {"A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q","R","S","T","U","V","W","X","Y","Z"}
-aimSection:AddDropdown({
-    Name = "Keybind",
-    Values = alphabetKeys,
-    Default = "Q",
-    Callback = function(val)
-        aimKeybind = Enum.KeyCode[val]
-        print("Keybind changed to:", val, aimKeybind)  -- отладка
+-- Заменяем Dropdown на Keybind от Fatality
+aimSection:AddKeybind({
+    Name = "Activation Key",
+    Default = "Q",  -- можно указать строку, Fatality сам преобразует
+    Callback = function(key)
+        -- key приходит как строка, например "Q"
+        aimKeybind = Enum.KeyCode[key]
+        print("Keybind set to:", key, aimKeybind)
     end
 })
 
@@ -283,24 +285,27 @@ local function setAntiAimState(state)
     end
 end
 
--- ==================== ESP часть ====================
+-- ==================== ESP таблица ====================
 local ESP = {
     Enabled = false,
     TeamCheck = false,
     ShowTeam = false,
     BoxESP = false,
-    BoxStyle = "Corner", -- Corner, Full
+    BoxStyle = "Corner",
+	BoxColor = Color3.fromRGB(255, 255, 255),
     BoxThickness = 1,
+    BoxFillTransparency = 0.5,
     TracerESP = false,
-    TracerOrigin = "Bottom", -- Bottom, Top, Mouse, Center
+    TracerOrigin = "Bottom",
     TracerThickness = 1,
     HealthESP = false,
-    HealthStyle = "Bar", -- Bar, Text, Both
-    NameESP = true,
+    HealthStyle = "Bar",
+    NameESP = false,
     NameMode = "DisplayName",
+    WeaponESP = false,
     ShowDistance = false,
     DistanceUnit = "studs",
-    TextSize = 14, -- фиксированный
+    TextSize = 14,
     MaxDistance = 1000,
     RainbowEnabled = false,
     RainbowSpeed = 1,
@@ -310,7 +315,6 @@ local ESP = {
     ChamsEnabled = false,
     ChamsFillColor = Color3.fromRGB(255, 0, 0),
     ChamsOutlineColor = Color3.fromRGB(255, 255, 255),
-    ChamsOccludedColor = Color3.fromRGB(150, 0, 0),
     ChamsTransparency = 0.5,
     ChamsOutlineTransparency = 0,
     ChamsOutlineThickness = 0.1,
@@ -343,6 +347,14 @@ local function createESP(player)
         line.Color = ESP.EnemyColor
         line.Thickness = ESP.BoxThickness
     end
+	
+	-- Добавляем квадрат для заливки (Filled)
+local fillSquare = Drawing.new("Square")
+fillSquare.Visible = false
+fillSquare.Filled = true
+fillSquare.Color = ESP.EnemyColor
+fillSquare.Transparency = ESP.BoxFillTransparency
+box.Fill = fillSquare
     
     local tracer = Drawing.new("Line")
     tracer.Visible = false
@@ -366,18 +378,19 @@ local function createESP(player)
     healthBar.Text.Color = ESP.HealthColor
     healthBar.Text.Font = 2
     
-    local info = {
-        Name = Drawing.new("Text"),
-        Distance = Drawing.new("Text")
-    }
-    for _, text in pairs(info) do
-        text.Visible = false
-        text.Center = true
-        text.Size = ESP.TextSize
-        text.Color = ESP.EnemyColor
-        text.Font = 2
-        text.Outline = true
-    end
+ local info = {
+    Name = Drawing.new("Text"),
+    Distance = Drawing.new("Text"),
+    Weapon = Drawing.new("Text")
+}
+for _, text in pairs(info) do
+    text.Visible = false
+    text.Center = true
+    text.Size = ESP.TextSize
+    text.Color = ESP.EnemyColor
+    text.Font = 2
+    text.Outline = true
+end
     
     local snapline = Drawing.new("Line")
     snapline.Visible = false
@@ -409,6 +422,7 @@ local function removeESP(player)
         esp.Tracer:Remove()
         for _, obj in pairs(esp.HealthBar) do obj:Remove() end
         for _, obj in pairs(esp.Info) do obj:Remove() end
+        if esp.Box.Fill then esp.Box.Fill:Remove() end
         esp.Snapline:Remove()
         Drawings.ESP[player] = nil
     end
@@ -521,7 +535,57 @@ end
     -- Hide all box parts initially
     for _, obj in pairs(esp.Box) do obj.Visible = false end
     
-    if ESP.BoxESP then
+	if ESP.BoxESP then
+    -- Определяем цвет для бокса (с учётом радуги)
+    local boxColor
+    if ESP.RainbowEnabled and (ESP.RainbowBoxes or ESP.RainbowParts == "All") then
+        boxColor = Colors.Rainbow
+    else
+        boxColor = ESP.BoxColor
+    end
+
+    -- Далее идёт старый код, но вместо color нужно использовать boxColor
+    if ESP.BoxStyle == "Filled" then
+        -- Скрываем линии...
+        local fill = esp.Box.Fill
+        fill.Color = boxColor   -- <-- используем boxColor
+        -- ...
+    else
+        -- для Corner и Full
+        for _, obj in pairs(esp.Box) do
+            if obj.Visible then
+                obj.Color = boxColor   -- <-- здесь тоже
+                obj.Thickness = ESP.BoxThickness
+            end
+        end
+    end
+end
+
+if ESP.BoxESP then
+    -- Цвет для бокса (отдельный от общего)
+    local boxColor
+    if ESP.RainbowEnabled and (ESP.RainbowBoxes or ESP.RainbowParts == "All") then
+        boxColor = Colors.Rainbow
+    else
+        boxColor = ESP.BoxColor
+    end
+
+    if ESP.BoxStyle == "Filled" then
+        -- Скрываем все линии
+        for _, obj in pairs(esp.Box) do
+            if obj ~= esp.Box.Fill then obj.Visible = false end
+        end
+        -- Настраиваем квадрат заливки
+        local fill = esp.Box.Fill
+        fill.Position = boxPos
+        fill.Size = boxSize
+        fill.Color = boxColor
+        fill.Transparency = ESP.BoxFillTransparency
+        fill.Visible = true
+    else
+        -- Скрываем квадрат заливки
+        if esp.Box.Fill then esp.Box.Fill.Visible = false end
+        -- Старые стили
         if ESP.BoxStyle == "Corner" then
             local corner = boxWidth * 0.2
             esp.Box.TopLeft.From = boxPos
@@ -570,6 +634,7 @@ end
             esp.Box.Bottom.Visible = true
         end
         
+        -- Применяем цвет и толщину к линиям
         for _, obj in pairs(esp.Box) do
             if obj.Visible then
                 obj.Color = color
@@ -577,6 +642,7 @@ end
             end
         end
     end
+end
     
     if ESP.TracerESP then
         esp.Tracer.From = getTracerOrigin()
@@ -632,6 +698,17 @@ end
     else
         esp.Info.Distance.Visible = false
     end
+-- Weapon ESP
+if ESP.WeaponESP then
+    local tool = character:FindFirstChildOfClass("Tool")
+    local weaponName = tool and tool.Name or "None"
+    esp.Info.Weapon.Text = weaponName
+    esp.Info.Weapon.Position = Vector2.new(boxPos.X + boxWidth/2, boxPos.Y + screenSize + 25)  -- чуть ниже дистанции
+    esp.Info.Weapon.Color = color
+    esp.Info.Weapon.Visible = true
+else
+    esp.Info.Weapon.Visible = false
+end
     
     -- Chams
     local highlight = Highlights[player]
@@ -695,6 +772,7 @@ end
 local watermarkGui = Instance.new("ScreenGui")
 watermarkGui.Name = "FatalityWatermark"
 watermarkGui.Parent = CoreGui
+watermarkGui.Enabled = false
 watermarkGui.IgnoreGuiInset = true
 watermarkGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 watermarkGui.ResetOnSpawn = false
@@ -759,12 +837,19 @@ end
 
 -- Функция обновления текста и размера фона
 local function updateWatermark()
-    -- Получаем пинг
+    -- Если водяной знак отключён глобально, просто скрываем и выходим
+    if not showWatermark then
+        if watermarkFrame then
+            watermarkFrame.Visible = false
+        end
+        return
+    end
+
+    -- Получаем пинг и FPS
     local pingMs = LocalPlayer:GetNetworkPing() * 1000
-    -- Получаем FPS
     local fps = workspace:GetRealPhysicsFPS()
 
-    -- Формируем строку
+    -- Формируем строку из активных компонентов
     local parts = {"FATALITY"}
     if showPing then
         table.insert(parts, string.format("Ping: %.0fms", pingMs))
@@ -773,26 +858,24 @@ local function updateWatermark()
         table.insert(parts, string.format("FPS: %.0f", fps))
     end
 
+    -- Если нечего показывать (оба выключены), скрываем фрейм
     if #parts == 1 then
-        watermarkText.Text = "FATALITY"
-        watermarkFrame.Visible = true
-    elseif #parts > 1 then
-        watermarkText.Text = table.concat(parts, " | ")
-        watermarkFrame.Visible = true
-    else
         watermarkFrame.Visible = false
         return
     end
 
-    -- Вычисляем ширину текста и добавляем отступы
+    -- Обновляем текст
+    watermarkText.Text = table.concat(parts, " | ")
+    watermarkFrame.Visible = true
+
+    -- Подгоняем ширину под текст
     local textWidth = getTextWidth(watermarkText.Text) + 20
     watermarkFrame.Size = UDim2.new(0, textWidth, 0, 30)
-    -- Не меняем позицию по X, оставляем как есть
-    -- Только если это первый запуск, можно установить центр, но позиция уже задана при создании
-end
 
--- Подключаем обновление к RenderStepped
-local watermarkConnection = RunService.RenderStepped:Connect(updateWatermark)
+    -- Центрируем по горизонтали, сохраняя вертикальную позицию
+    local topInset = game:GetService("GuiService"):GetGuiInset().Y
+    watermarkFrame.Position = UDim2.new(0.5, -textWidth/2, 0, topInset + 8)
+end
 
 -- ==================== UI для ANTI-AIM ====================
 local aaSection = AntiAimTab:AddSection({
@@ -937,25 +1020,43 @@ espSection:AddToggle({
     Callback = function(val) ESP.TeamCheck = val end
 })
 
-local boxSection = VisualTab:AddSection({
-    Name = "BOX",
-    Position = 'left'
+-- ===== NAME ESP (наверху) =====
+local nameToggle = espSection:AddToggle({
+    Name = "Name ESP",
+    Default = false,
+    Option = true,
+    Callback = function(val) ESP.NameESP = val end
 })
 
-boxSection:AddToggle({
+nameToggle.Option:AddToggle({
+    Name = "Show Distance",
+    Default = false,
+    Callback = function(val) ESP.ShowDistance = val end
+})
+
+-- Добавляем Weapon ESP сюда
+nameToggle.Option:AddToggle({
+    Name = "Weapon ESP",
+    Default = false,
+    Callback = function(val) ESP.WeaponESP = val end
+})
+
+-- ===== BOX ESP =====
+local boxToggle = espSection:AddToggle({
     Name = "Box ESP",
     Default = false,
+    Option = true,
     Callback = function(val) ESP.BoxESP = val end
 })
 
-boxSection:AddDropdown({
+boxToggle.Option:AddDropdown({
     Name = "Box Style",
-    Values = {"Corner", "Full"},
+    Values = {"Corner", "Full", "Filled"},  -- добавили Filled
     Default = "Corner",
     Callback = function(val) ESP.BoxStyle = val end
 })
 
-boxSection:AddSlider({
+boxToggle.Option:AddSlider({
     Name = "Box Thickness",
     Default = 1,
     Min = 1,
@@ -963,96 +1064,74 @@ boxSection:AddSlider({
     Callback = function(val) ESP.BoxThickness = val end
 })
 
-local tracerSection = VisualTab:AddSection({
-    Name = "TRACER",
-    Position = 'center'
+boxToggle.Option:AddColorPicker({
+    Name = "Box Color",
+    Default = ESP.BoxColor,
+    Callback = function(val) ESP.BoxColor = val end
 })
 
-tracerSection:AddToggle({
+-- Слайдер для прозрачности заливки (только для стиля Filled)
+boxToggle.Option:AddSlider({
+    Name = "Fill Transparency",
+    Default = 5,
+    Min = 0,
+    Max = 10,
+    Rounding = 0,
+    Type = "",
+    Callback = function(val) ESP.BoxFillTransparency = val / 10 end
+})
+
+-- ===== TRACER ESP =====
+local tracerToggle = espSection:AddToggle({
     Name = "Tracer ESP",
     Default = false,
+    Option = true,
     Callback = function(val) ESP.TracerESP = val end
 })
 
-tracerSection:AddDropdown({
+tracerToggle.Option:AddDropdown({
     Name = "Tracer Origin",
     Values = {"Bottom", "Top", "Mouse", "Center"},
     Default = "Bottom",
     Callback = function(val) ESP.TracerOrigin = val end
 })
 
-local healthSection = VisualTab:AddSection({
-    Name = "HEALTH",
-    Position = 'center'
-})
-
-healthSection:AddToggle({
-    Name = "Health Bar",
+-- ===== HEALTH (переименовано) =====
+local healthToggle = espSection:AddToggle({
+    Name = "Health",
     Default = false,
+    Option = true,
     Callback = function(val) ESP.HealthESP = val end
 })
 
-healthSection:AddDropdown({
+healthToggle.Option:AddDropdown({
     Name = "Health Style",
     Values = {"Bar", "Text", "Both"},
     Default = "Bar",
     Callback = function(val) ESP.HealthStyle = val end
 })
 
-local nameSection = VisualTab:AddSection({
-    Name = "INFO",
-    Position = 'right'
-})
-
-nameSection:AddToggle({
-    Name = "Name ESP",
-    Default = true,
-    Callback = function(val) ESP.NameESP = val end
-})
-
-nameSection:AddToggle({
-    Name = "Show Distance",
+-- ===== CHAMS (переименовано) =====
+local chamsToggle = espSection:AddToggle({
+    Name = "Chams",
     Default = false,
-    Callback = function(val) ESP.ShowDistance = val end
-})
-
-nameSection:AddSlider({
-    Name = "Max Distance",
-    Default = 1000,
-    Min = 100,
-    Max = 5000,
-    Callback = function(val) ESP.MaxDistance = val end
-})
-
-local chamsSection = VisualTab:AddSection({
-    Name = "CHAMS",
-    Position = 'right'
-})
-
-chamsSection:AddToggle({
-    Name = "Enable Chams",
-    Default = false,
+    Option = true,
     Callback = function(val) ESP.ChamsEnabled = val end
 })
 
-chamsSection:AddColorPicker({
+chamsToggle.Option:AddColorPicker({
     Name = "Fill Color",
     Default = ESP.ChamsFillColor,
     Callback = function(val) ESP.ChamsFillColor = val end
 })
 
-chamsSection:AddColorPicker({
+chamsToggle.Option:AddColorPicker({
     Name = "Outline Color",
     Default = ESP.ChamsOutlineColor,
     Callback = function(val) ESP.ChamsOutlineColor = val end
 })
 
-chamsSection:AddColorPicker({
-    Name = "Occluded Color",
-    Default = ESP.ChamsOccludedColor,
-    Callback = function(val) ESP.ChamsOccludedColor = val end
-})
-chamsSection:AddSlider({
+chamsToggle.Option:AddSlider({
     Name = "Fill Transparency",
     Default = 5,
     Min = 0,
@@ -1062,53 +1141,34 @@ chamsSection:AddSlider({
     Callback = function(val) ESP.ChamsTransparency = val / 10 end
 })
 
-chamsSection:AddSlider({
+chamsToggle.Option:AddSlider({
     Name = "Outline Transparency",
-    Default = 5,
+    Default = 0,
     Min = 0,
     Max = 10,
     Rounding = 0,
-    Type = "",      
+    Type = "",
     Callback = function(val) ESP.ChamsOutlineTransparency = val / 10 end
 })
 
-local colorSection = VisualTab:AddSection({
-    Name = "COLORS",
-    Position = 'center'
-})
-
-colorSection:AddColorPicker({
-    Name = "Enemy Color",
-    Default = Color3.fromRGB(255, 255, 255),
-    Callback = function(val) ESP.EnemyColor = val end
-})
-
-colorSection:AddColorPicker({
-    Name = "Ally Color",
-    Default = ESP.AllyColor,
-    Callback = function(val) ESP.AllyColor = val end
-})
-
-local rainbowSection = VisualTab:AddSection({
-    Name = "RAINBOW",
-    Position = 'right'
-})
-
-rainbowSection:AddToggle({
+-- ===== RAINBOW =====
+local rainbowToggle = espSection:AddToggle({
     Name = "Rainbow Mode",
     Default = false,
+    Option = true,
     Callback = function(val) ESP.RainbowEnabled = val end
 })
 
-rainbowSection:AddSlider({
+rainbowToggle.Option:AddSlider({
     Name = "Rainbow Speed",
     Default = 1,
     Min = 0.1,
     Max = 5,
+    Rounding = 1,
     Callback = function(val) ESP.RainbowSpeed = val end
 })
 
-rainbowSection:AddDropdown({
+rainbowToggle.Option:AddDropdown({
     Name = "Rainbow Parts",
     Values = {"All", "Box Only", "Tracers Only", "Text Only"},
     Default = "All",
@@ -1133,24 +1193,39 @@ rainbowSection:AddDropdown({
     end
 })
 
--- ==================== Секция WATERMARK SETTINGS во вкладке MISC ====================
-local watermarkSettingsSection = Misc:AddSection({
-    Name = "WATERMARK SETTINGS",
+-- ==================== Секция WATERMARK (с Option) ====================
+local watermarkSection = Misc:AddSection({
+    Name = "WATERMARK",
     Position = 'left'
 })
 
-watermarkSettingsSection:AddToggle({
+-- Основной переключатель водяного знака
+local watermarkMainToggle = watermarkSection:AddToggle({
+    Name = "Show Watermark",
+    Default = false,                     -- true = включён по умолчанию
+    Option = true,                       -- добавляем шестерёнку
+    Callback = function(val)
+        showWatermark = val
+        if watermarkGui then
+            watermarkGui.Enabled = val
+        end
+        updateWatermark()                 -- обновить текст и видимость
+    end
+})
+
+-- Внутри шестерёнки добавляем настройки Ping и FPS
+watermarkMainToggle.Option:AddToggle({
     Name = "Show Ping",
-    Default = true,
+    Default = false,
     Callback = function(val)
         showPing = val
         updateWatermark()
     end
 })
 
-watermarkSettingsSection:AddToggle({
+watermarkMainToggle.Option:AddToggle({
     Name = "Show FPS",
-    Default = true,
+    Default = false,
     Callback = function(val)
         showFPS = val
         updateWatermark()
