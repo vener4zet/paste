@@ -28,7 +28,7 @@ local Window = Fatality.new({
 
 -- Создаём вкладки
 local AimTab = Window:AddMenu({
-    Name = "AIM",
+    Name = "LEGIT",
     Icon = "target"
 })
 
@@ -695,13 +695,15 @@ end
 local watermarkGui = Instance.new("ScreenGui")
 watermarkGui.Name = "FatalityWatermark"
 watermarkGui.Parent = CoreGui
+watermarkGui.IgnoreGuiInset = true
 watermarkGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 watermarkGui.ResetOnSpawn = false
 
 local watermarkFrame = Instance.new("Frame")
 watermarkFrame.Size = UDim2.new(0, 200, 0, 30)
 -- Ставим в центр сверху при создании
-watermarkFrame.Position = UDim2.new(0.5, -100, 0, 8)
+local topInset = game:GetService("GuiService"):GetGuiInset().Y
+watermarkFrame.Position = UDim2.new(0.5, -100, 0, topInset + 8)
 watermarkFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 watermarkFrame.BackgroundTransparency = 0.3
 watermarkFrame.BorderSizePixel = 0
