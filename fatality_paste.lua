@@ -27,6 +27,11 @@ local Window = Fatality.new({
 });
 
 -- Создаём вкладки
+local AimTab = Window:AddMenu({
+    Name = "AIM",
+    Icon = "target"
+})
+
 local AntiAimTab = Window:AddMenu({
     Name = "ANTIAIM",
     Icon = "crosshair"
@@ -57,6 +62,123 @@ local TextService = game:GetService("TextService")
 local Stats = game:GetService("Stats")
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
+
+local aimLockEnabled = false
+local aimTargetPlayer = nil
+local aimPart = "Head"
+local aimKeybind = Enum.KeyCode.Q
+local aimConnection = nil
+
+local function findNearestPlayerByPart(mousePosition)
+    local nearestPlayer = nil
+    local minDistance = math.huge
+    local camera = Camera
+
+    for _, player in ipairs(Players:GetPlayers()) do
+        if player ~= LocalPlayer and player.Character then
+            local character = player.Character
+            local part = character:FindFirstChild(aimPart)
+            if aimPart == "Torso" and not part then
+                part = character:FindFirstChild("UpperTorso")
+            end
+            if part then
+                local partScreen, onScreen = camera:WorldToViewportPoint(part.Position)
+                if onScreen and partScreen.Z > 0 then
+                    local distance = (Vector2.new(partScreen.X, partScreen.Y) - mousePosition).Magnitude
+                    if distance < minDistance then
+                        minDistance = distance
+                        nearestPlayer = player
+                    end
+                end
+            end
+        end
+    end
+    return nearestPlayer
+end
+
+local function lockMouseToPlayer(player)
+    aimTargetPlayer = player
+    UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+    print("Locked to:", player.Name)  -- отладка
+end
+
+local function unlockMouse()
+    aimTargetPlayer = nil
+    UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+    print("Unlocked")  -- отладка
+end
+
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed then return end
+    print("Key pressed:", input.KeyCode, "aimLockEnabled=", aimLockEnabled, "aimKeybind=", aimKeybind.Name)
+    if input.KeyCode == aimKeybind and aimLockEnabled then
+        if not aimTargetPlayer then
+            local mouse = LocalPlayer:GetMouse()
+            local mousePos = Vector2.new(mouse.X, mouse.Y)
+            local nearest = findNearestPlayerByPart(mousePos)
+            if nearest then
+                lockMouseToPlayer(nearest)
+            else
+                print("No target found")
+            end
+        else
+            unlockMouse()
+        end
+    end
+end)
+
+local function aimLoop()
+    if aimLockEnabled and aimTargetPlayer then
+        local character = aimTargetPlayer.Character
+        if character then
+            local part = character:FindFirstChild(aimPart)
+            if aimPart == "Torso" and not part then
+                part = character:FindFirstChild("UpperTorso")
+            end
+            if part then
+                Camera.CFrame = CFrame.lookAt(Camera.CFrame.Position, part.Position)
+            else
+                unlockMouse()
+            end
+        else
+            unlockMouse()
+        end
+    end
+end
+
+aimConnection = RunService.RenderStepped:Connect(aimLoop)
+
+local aimSection = AimTab:AddSection({
+    Name = "AIM LOCK",
+    Position = 'left'
+})
+
+aimSection:AddToggle({
+    Name = "Enable Aim Lock",
+    Default = false,
+    Callback = function(val)
+        aimLockEnabled = val
+        if not val then unlockMouse() end
+    end
+})
+
+aimSection:AddDropdown({
+    Name = "Aim Part",
+    Values = {"Head", "Torso"},
+    Default = "Head",
+    Callback = function(val) aimPart = val end
+})
+
+local alphabetKeys = {"A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q","R","S","T","U","V","W","X","Y","Z"}
+aimSection:AddDropdown({
+    Name = "Keybind",
+    Values = alphabetKeys,
+    Default = "Q",
+    Callback = function(val)
+        aimKeybind = Enum.KeyCode[val]
+        print("Keybind changed to:", val, aimKeybind)  -- отладка
+    end
+})
 
 -- ==================== Anti-Aim часть ====================
 local antiAimEnabled = false
@@ -1077,25 +1199,36 @@ miscRight:AddButton({
     Name = "Unload Script",
     Description = "Полностью выгрузить скрипт и закрыть UI",
     Callback = function()
-        -- 1. Останавливаем Anti-Aim
+       --1. Останавливаем Aim
+       if inputConnection then
+       inputConnection:Disconnect()
+       inputConnection = nil
+       end
+       -- Сбрасываем поведение мыши
+        UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+        -- Обнуляем переменные Aim Lock (если они глобальные для скрипта)
+        aimLockEnabled = false
+        aimTargetPlayer = nil
+
+        -- 2. Останавливаем Anti-Aim
         setAntiAimState(false)
         if antiAimConnection then
             antiAimConnection:Disconnect()
             antiAimConnection = nil
         end
 
-        -- 2. Останавливаем ESP
+        -- 3. Останавливаем ESP
         if espConnection then
             espConnection:Disconnect()
             espConnection = nil
         end
 
-        -- 3. Останавливаем Fake Lag
+        -- 4. Останавливаем Fake Lag
         if fakeLagEnabled then
             setFakeLagState(false)
         end
 
-        -- 4. Останавливаем обновление водяного знака и уничтожаем его GUI
+        -- 5. Останавливаем обновление водяного знака и уничтожаем его GUI
         if watermarkConnection then
             watermarkConnection:Disconnect()
             watermarkConnection = nil
@@ -1105,7 +1238,7 @@ miscRight:AddButton({
             watermarkGui = nil
         end
 
-        -- 5. Удаляем все Drawing объекты ESP
+        -- 6. Удаляем все Drawing объекты ESP
         for _, player in ipairs(Players:GetPlayers()) do
             local esp = Drawings.ESP[player]
             if esp then
@@ -1118,13 +1251,13 @@ miscRight:AddButton({
         end
         Drawings.ESP = {}
 
-        -- 6. Удаляем Highlight
+        -- 7. Удаляем Highlight
         for _, highlight in pairs(Highlights) do
             pcall(function() highlight:Destroy() end)
         end
         Highlights = {}
 
-        -- 7. Уничтожаем GUI через глобальную таблицу Fatality.Windows
+        -- 8. Уничтожаем GUI через глобальную таблицу Fatality.Windows
         print("=== Уничтожение GUI Fatality через Fatality.Windows ===")
         local destroyed = false
         local windows = {}
@@ -1145,7 +1278,7 @@ miscRight:AddButton({
             print("Не удалось найти GUI в Fatality.Windows.")
         end
 
-        -- 8. Очищаем переменные
+        -- 9. Очищаем переменные
         Window = nil
         Fatality = nil
         AntiAimTab = nil
