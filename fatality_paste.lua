@@ -1,8 +1,10 @@
--- Anti-Aim + ESP для фреймворка Fatality (вкладки: ANTI-AIM, VISUAL, MISC)
+-- Anti-Aim + ESP для фреймворка Fatality (вкладки: ANTI-AIM, VISUAL, MISC, LUA)
 -- Anti-Aim: основные режимы (None, Backward, At Target, Spin) + отдельный Jitter
 -- ESP: боксы (Corner/Full), трейсеры, здоровье, имена, расстояние, чеймсы
--- В MISC: кнопки Infinite Yield, Stretch и Unload (полная выгрузка с улучшенным поиском GUI)
--- At Target игнорирует вертикальную составляющую
+-- В MISC: секция WATERMARK SETTINGS с переключателями Ping/FPS и кнопка Unload
+-- В LUA: кнопки Load Infinite Yield и Stretch
+-- Водяной знак: автоматическая подстройка размера под текст, имя FATALITY, тонкий шрифт
+-- В ANTI-AIM: секция FAKE LAG (правая колонка) с точными слайдерами
 
 -- Загрузка Fatality
 local Fatality = loadstring(game:HttpGet("https://raw.githubusercontent.com/4lpaca-pin/Fatality/refs/heads/main/src/source.luau"))();
@@ -40,12 +42,19 @@ local Misc = Window:AddMenu({
     Icon = "settings"
 })
 
+local LuaTab = Window:AddMenu({
+    Name = "LUA",
+    Icon = "code"
+})
+
 -- ==================== Сервисы Roblox ====================
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local Workspace = game:GetService("Workspace")
 local CoreGui = game:GetService("CoreGui")
 local UserInputService = game:GetService("UserInputService")
+local TextService = game:GetService("TextService")
+local Stats = game:GetService("Stats")
 local LocalPlayer = Players.LocalPlayer
 local Camera = Workspace.CurrentCamera
 
@@ -547,6 +556,107 @@ for _, player in ipairs(Players:GetPlayers()) do
     if player ~= LocalPlayer then createESP(player) end
 end
 
+-- ==================== Водяной знак (Ping/FPS) с авто-размером ====================
+local watermarkGui = Instance.new("ScreenGui")
+watermarkGui.Name = "FatalityWatermark"
+watermarkGui.Parent = CoreGui
+watermarkGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+watermarkGui.ResetOnSpawn = false
+
+local watermarkFrame = Instance.new("Frame")
+watermarkFrame.Size = UDim2.new(0, 200, 0, 30)
+-- Ставим в центр сверху при создании
+watermarkFrame.Position = UDim2.new(0.5, -100, 0, 8)
+watermarkFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+watermarkFrame.BackgroundTransparency = 0.3
+watermarkFrame.BorderSizePixel = 0
+watermarkFrame.Active = true
+watermarkFrame.Parent = watermarkGui
+
+local corner1 = Instance.new("UICorner")
+corner1.CornerRadius = UDim.new(0, 8)
+corner1.Parent = watermarkFrame
+
+local watermarkText = Instance.new("TextLabel")
+watermarkText.Size = UDim2.new(1, -10, 1, 0)
+watermarkText.Position = UDim2.new(0, 5, 0, 0)
+watermarkText.Font = Enum.Font.SourceSans
+watermarkText.TextSize = 16
+watermarkText.TextColor3 = Color3.fromRGB(255, 106, 133)
+watermarkText.BackgroundTransparency = 1
+watermarkText.TextXAlignment = Enum.TextXAlignment.Left
+watermarkText.Text = "FATALITY | Ping: 0ms | FPS: 0"
+watermarkText.Parent = watermarkFrame
+
+-- Перетаскивание
+local dragStart, startPos
+local function inputBegan(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragStart = input.Position
+        startPos = watermarkFrame.Position
+    end
+end
+local function inputChanged(input)
+    if dragStart then
+        local delta = input.Position - dragStart
+        watermarkFrame.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end
+watermarkFrame.InputBegan:Connect(inputBegan)
+watermarkFrame.InputChanged:Connect(inputChanged)
+watermarkFrame.InputEnded:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragStart = nil
+    end
+end)
+
+-- Переменные состояния для отображения
+local showPing = true
+local showFPS = true
+
+-- Функция для вычисления ширины текста
+local function getTextWidth(text)
+    local size = TextService:GetTextSize(text, watermarkText.TextSize, watermarkText.Font, Vector2.new(1000, 1000))
+    return size.X
+end
+
+-- Функция обновления текста и размера фона
+local function updateWatermark()
+    -- Получаем пинг
+    local pingMs = LocalPlayer:GetNetworkPing() * 1000
+    -- Получаем FPS
+    local fps = workspace:GetRealPhysicsFPS()
+
+    -- Формируем строку
+    local parts = {"FATALITY"}
+    if showPing then
+        table.insert(parts, string.format("Ping: %.0fms", pingMs))
+    end
+    if showFPS then
+        table.insert(parts, string.format("FPS: %.0f", fps))
+    end
+
+    if #parts == 1 then
+        watermarkText.Text = "FATALITY"
+        watermarkFrame.Visible = true
+    elseif #parts > 1 then
+        watermarkText.Text = table.concat(parts, " | ")
+        watermarkFrame.Visible = true
+    else
+        watermarkFrame.Visible = false
+        return
+    end
+
+    -- Вычисляем ширину текста и добавляем отступы
+    local textWidth = getTextWidth(watermarkText.Text) + 20
+    watermarkFrame.Size = UDim2.new(0, textWidth, 0, 30)
+    -- Не меняем позицию по X, оставляем как есть
+    -- Только если это первый запуск, можно установить центр, но позиция уже задана при создании
+end
+
+-- Подключаем обновление к RenderStepped
+local watermarkConnection = RunService.RenderStepped:Connect(updateWatermark)
+
 -- ==================== UI для ANTI-AIM ====================
 local aaSection = AntiAimTab:AddSection({
     Name = "ANTI-AIM",
@@ -602,6 +712,74 @@ jitterSection:AddSlider({
     Max = 90,
     Type = "deg",
     Callback = function(val) jitterRange = val end
+})
+
+-- ==================== FAKE LAG секция (правая колонка) с точными слайдерами (в миллисекундах) ====================
+local fakeLagSection = AntiAimTab:AddSection({
+    Name = "FAKE LAG",
+    Position = 'right'
+})
+
+local fakeLagEnabled = false
+local fakeLagWait = 0.05      -- в секундах
+local fakeLagDelay = 0.4       -- в секундах
+local fakeLagThread = nil
+
+local function fakeLagLoop()
+    while fakeLagEnabled do
+        local character = LocalPlayer.Character
+        if character and character:FindFirstChild("HumanoidRootPart") then
+            local root = character.HumanoidRootPart
+            root.Anchored = true
+            task.wait(fakeLagDelay)
+            root.Anchored = false
+        end
+        task.wait(fakeLagWait)
+    end
+end
+
+local function setFakeLagState(state)
+    if state == fakeLagEnabled then return end
+    fakeLagEnabled = state
+    if state then
+        fakeLagThread = task.spawn(fakeLagLoop)
+    else
+        if fakeLagThread then
+            task.cancel(fakeLagThread)
+            fakeLagThread = nil
+        end
+        local character = LocalPlayer.Character
+        if character and character:FindFirstChild("HumanoidRootPart") then
+            character.HumanoidRootPart.Anchored = false
+        end
+    end
+end
+
+fakeLagSection:AddToggle({
+    Name = "Enable Fake Lag",
+    Default = false,
+    Callback = function(val) setFakeLagState(val) end
+})
+
+-- Слайдеры в миллисекундах (целые числа), затем перевод в секунды
+fakeLagSection:AddSlider({
+    Name = "Wait Time (ms)",
+    Default = 50,        -- 0.05 * 1000
+    Min = 10,
+    Max = 1000,
+    Rounding = 0,
+    Type = "ms",
+    Callback = function(val) fakeLagWait = val / 1000 end
+})
+
+fakeLagSection:AddSlider({
+    Name = "Delay Time (ms)",
+    Default = 400,       -- 0.4 * 1000
+    Min = 10,
+    Max = 2000,
+    Rounding = 0,
+    Type = "ms",
+    Callback = function(val) fakeLagDelay = val / 1000 end
 })
 
 -- ==================== UI для VISUAL ====================
@@ -837,13 +1015,37 @@ rainbowSection:AddDropdown({
     end
 })
 
--- ==================== Кнопки в MISC (левая колонка) ====================
-local miscSectionLeft = Misc:AddSection({
-    Name = "UTILITIES",
+-- ==================== Секция WATERMARK SETTINGS во вкладке MISC ====================
+local watermarkSettingsSection = Misc:AddSection({
+    Name = "WATERMARK SETTINGS",
     Position = 'left'
 })
 
-miscSectionLeft:AddButton({
+watermarkSettingsSection:AddToggle({
+    Name = "Show Ping",
+    Default = true,
+    Callback = function(val)
+        showPing = val
+        updateWatermark()
+    end
+})
+
+watermarkSettingsSection:AddToggle({
+    Name = "Show FPS",
+    Default = true,
+    Callback = function(val)
+        showFPS = val
+        updateWatermark()
+    end
+})
+
+-- ==================== Кнопки во вкладке LUA ====================
+local luaSection = LuaTab:AddSection({
+    Name = "SCRIPTS",
+    Position = 'left'
+})
+
+luaSection:AddButton({
     Name = "Load Infinite Yield",
     Description = "Загрузить админ-скрипт Infinite Yield",
     Callback = function()
@@ -851,7 +1053,7 @@ miscSectionLeft:AddButton({
     end
 })
 
-miscSectionLeft:AddButton({
+luaSection:AddButton({
     Name = "Stretch",
     Description = "Активировать эффект растяжения (Resolution)",
     Callback = function()
@@ -870,13 +1072,13 @@ miscSectionLeft:AddButton({
     end
 })
 
--- ==================== Кнопка Unload с точным уничтожением через Fatality.Windows ====================
-local miscSection = Misc:AddSection({
+-- ==================== Кнопка Unload во вкладке MISC (правая колонка) ====================
+local miscRight = Misc:AddSection({
     Name = "UNLOAD",
     Position = 'right'
 })
 
-miscSection:AddButton({
+miscRight:AddButton({
     Name = "Unload Script",
     Description = "Полностью выгрузить скрипт и закрыть UI",
     Callback = function()
@@ -893,7 +1095,22 @@ miscSection:AddButton({
             espConnection = nil
         end
 
-        -- 3. Удаляем все Drawing объекты ESP
+        -- 3. Останавливаем Fake Lag
+        if fakeLagEnabled then
+            setFakeLagState(false)
+        end
+
+        -- 4. Останавливаем обновление водяного знака и уничтожаем его GUI
+        if watermarkConnection then
+            watermarkConnection:Disconnect()
+            watermarkConnection = nil
+        end
+        if watermarkGui then
+            pcall(function() watermarkGui:Destroy() end)
+            watermarkGui = nil
+        end
+
+        -- 5. Удаляем все Drawing объекты ESP
         for _, player in ipairs(Players:GetPlayers()) do
             local esp = Drawings.ESP[player]
             if esp then
@@ -906,26 +1123,21 @@ miscSection:AddButton({
         end
         Drawings.ESP = {}
 
-        -- 4. Удаляем Highlight
+        -- 6. Удаляем Highlight
         for _, highlight in pairs(Highlights) do
             pcall(function() highlight:Destroy() end)
         end
         Highlights = {}
 
-        -- 5. Уничтожаем GUI через глобальную таблицу Fatality.Windows
+        -- 7. Уничтожаем GUI через глобальную таблицу Fatality.Windows
         print("=== Уничтожение GUI Fatality через Fatality.Windows ===")
         local destroyed = false
-        -- Копируем список, так как будем изменять оригинал
         local windows = {}
         for _, w in ipairs(Fatality.Windows) do
             table.insert(windows, w)
         end
         for _, gui in ipairs(windows) do
-            -- Проверяем, что GUI ещё существует и является ScreenGui
             if gui and gui:IsA("ScreenGui") and gui.Parent then
-                -- Дополнительно можно проверить, содержит ли он нашу кнопку, чтобы не удалить чужое окно Fatality
-                -- Но обычно Fatality.Windows хранит все окна, созданные через этот экземпляр фреймворка.
-                -- Мы можем просто удалить все, так как других окон в текущем контексте не должно быть.
                 pcall(function() gui:Destroy() end)
                 destroyed = true
                 print("Уничтожен GUI:", gui:GetFullName())
@@ -938,7 +1150,7 @@ miscSection:AddButton({
             print("Не удалось найти GUI в Fatality.Windows.")
         end
 
-        -- 6. Очищаем переменные
+        -- 8. Очищаем переменные
         Window = nil
         Fatality = nil
         AntiAimTab = nil
